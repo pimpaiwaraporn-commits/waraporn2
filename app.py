@@ -1,80 +1,59 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
-# --- 1. กำหนดตำแหน่งของประจุ (Electric Dipole) ---
-q_pos = np.array([0.5, 0, 0])  # ประจุบวก
-q_neg = np.array([-0.5, 0, 0]) # ประจุลบ
+# ค่าคงที่ของคูลอมบ์ (k) 
+k = 8.9875e9 
 
-# --- 2. สร้าง Mesh Grid สำหรับพิกัด ---
-# สร้างช่วงพิกัด
-span = 1.5
-n = 10 # จำนวนจุดในแต่ละแกน (ยิ่งมากยิ่งละเอียด)
-x_lim = np.linspace(-span, span, n)
-y_lim = np.linspace(-span, span, n)
-z_lim = np.linspace(-span, span, n)
-X, Y, Z = np.meshgrid(x_lim, y_lim, z_lim)
+class Charge:
+    def __init__(self, position, charge_amount):
+        self.position = np.array(position) # ตำแหน่ง [x, y]
+        self.charge = charge_amount # ปริมาณประจุ (C)
 
-# กำหนดขนาดของสนามเวกเตอร์เริ่มต้นเป็นศูนย์
-U, V, W = np.zeros((n, n, n)), np.zeros((n, n, n)), np.zeros((n, n, n))
+def calculate_E_field(k, q, r_vec):
+    # E = k * q * r_unit / |r|^2
+    r_mag = np.linalg.norm(r_vec)
+    if r_mag == 0:
+        return np.array([0.0, 0.0])
+    r_unit = r_vec / r_mag
+    E_mag = k * q / r_mag**2
+    return E_mag * r_unit
 
-# --- 3. คำนวณสนามไฟฟ้า (E-Field) ณ ทุกจุด (กฎของคูลอมบ์) ---
-def calculate_e_field(charge_pos, X, Y, Z, sign=1):
-    """คำนวณสนามไฟฟ้าจากประจุจุดเดียว"""
-    # ตำแหน่งของจุดที่ต้องการคำนวณสนาม
-    R_x = X - charge_pos[0]
-    R_y = Y - charge_pos[1]
-    R_z = Z - charge_pos[2]
+# การตั้งค่า
+charges = [
+    Charge([-0.4, 0], 1e-6), # ประจุบวก
+    Charge([0.4, 0], -1e-6) # ประจุลบ
+]
 
-    # ระยะทางจากประจุถึงจุดคำนวณ (r^2)
-    R_sq = R_x**2 + R_y**2 + R_z**2
-    # ป้องกันการหารด้วยศูนย์ที่ตำแหน่งของประจุ
-    R_sq[R_sq < 1e-6] = 1e-6
+# สร้างตารางจุดสังเกต (Meshgrid)
+x = np.linspace(-1, 1, 20)
+y = np.linspace(-1, 1, 20)
+X, Y = np.meshgrid(x, y)
+Ex_total = np.zeros_like(X)
+Ey_total = np.zeros_like(Y)
 
-    # ความแรงของสนาม (E proportional to 1/r^2)
-    E_mag = sign / R_sq**1.5
+# คำนวณสนามไฟฟ้าที่แต่ละจุด
+for i in range(len(x)):
+    for j in range(len(y)):
+        obs_point = np.array([X[i, j], Y[i, j]])
+        E_total = np.array([0.0, 0.0])
+        
+        for charge in charges:
+            r_vec = obs_point - charge.position
+            E_total += calculate_E_field(k, charge.charge, r_vec)
+        
+        Ex_total[i, j] = E_total[0]
+        Ey_total[i, j] = E_total[1]
 
-    # ส่วนประกอบของเวกเตอร์สนาม (E = E_mag * R / r)
-    E_x = E_mag * R_x
-    E_y = E_mag * R_y
-    E_z = E_mag * R_z
-    return E_x, E_y, E_z
+# การแสดงผล (Visualization)
+plt.figure(figsize=(6, 6))
+plt.quiver(X, Y, Ex_total, Ey_total, scale=5e9, color='blue') # สร้างแผนภูมิเวกเตอร์
 
-# สนามจากประจุบวก
-E_pos_x, E_pos_y, E_pos_z = calculate_e_field(q_pos, X, Y, Z, sign=1)
-# สนามจากประจุลบ (ทิศทางตรงกันข้ามกับประจุบวก)
-E_neg_x, E_neg_y, E_neg_z = calculate_e_field(q_neg, X, Y, Z, sign=-1)
+for charge in charges:
+    color = 'red' if charge.charge > 0 else 'blue'
+    plt.plot(charge.position[0], charge.position[1], 'o', color=color, markersize=8)
 
-# สนามไฟฟ้ารวม (Superposition Principle)
-U = E_pos_x + E_neg_x
-V = E_pos_y + E_neg_y
-W = E_pos_z + E_neg_z
-
-# --- 4. การแสดงผลด้วย Quiver Plot 3D ---
-fig = plt.figure(figsize=(10, 10))
-ax = fig.add_subplot(111, projection='3d')
-
-# วาด Quiver Plot
-ax.quiver(
-    X, Y, Z,
-    U, V, W,
-    length=0.2,
-    normalize=True,   # ทำให้ลูกศรแสดงทิศทางหลักชัดเจน
-    color='purple',
-    alpha=0.7
-)
-
-# วาดจุดประจุ
-ax.scatter(q_pos[0], q_pos[1], q_pos[2], color='red', marker='o', s=100, label='+ Charge')
-ax.scatter(q_neg[0], q_neg[1], q_neg[2], color='blue', marker='o', s=100, label='- Charge')
-
-# --- 5. การตกแต่ง ---
-ax.set_title('Electric Dipole Field (Electrostatics)', fontsize=16, color='darkgreen')
-ax.set_xlabel('X Axis')
-ax.set_ylabel('Y Axis')
-ax.set_zlabel('Z Axis')
-ax.set_xlim([-span, span])
-ax.set_ylim([-span, span])
-ax.set_zlim([-span, span])
-ax.legend()
-
+plt.title('Electric Field Vector Map')
+plt.xlabel('X position')
+plt.ylabel('Y position')
+plt.show()
+   
